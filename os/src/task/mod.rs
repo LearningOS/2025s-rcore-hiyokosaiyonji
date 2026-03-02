@@ -126,6 +126,24 @@ impl TaskManager {
         inner.tasks[inner.current_task].get_trap_cx()
     }
 
+    /// Add current syscall times
+    fn add_current_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        if syscall_id < inner.tasks[inner.current_task].syscall_times.len() {
+            inner.tasks[inner.current_task].syscall_times[syscall_id] += 1;
+        }
+    }
+
+    /// Get current syscall times
+    fn get_current_syscall_times(&self, syscall_id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        if syscall_id < inner.tasks[inner.current_task].syscall_times.len() {
+            inner.tasks[inner.current_task].syscall_times[syscall_id] as isize
+        } else {
+            -1
+        }
+    }
+
     /// Change the current 'Running' task's program break
     pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
         let mut inner = self.inner.exclusive_access();
@@ -196,6 +214,16 @@ pub fn current_user_token() -> usize {
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
     TASK_MANAGER.get_current_trap_cx()
+}
+
+/// Add current syscall times
+pub fn add_current_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.add_current_syscall_times(syscall_id);
+}
+
+/// Get current syscall times
+pub fn get_current_syscall_times(syscall_id: usize) -> isize {
+    TASK_MANAGER.get_current_syscall_times(syscall_id)
 }
 
 /// Change the current 'Running' task's program break
