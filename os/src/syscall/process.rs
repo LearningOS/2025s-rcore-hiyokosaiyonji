@@ -67,7 +67,10 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             let va = VirtAddr::from(id);
             if let Some(pte) = page_table.translate(va.floor()) {
                 let flags = pte.flags();
-                if flags.contains(PTEFlags::U) && flags.contains(PTEFlags::R) {
+                if flags.contains(PTEFlags::V)
+                    && flags.contains(PTEFlags::U)
+                    && flags.contains(PTEFlags::R)
+                {
                     pte.ppn().get_bytes_array()[va.page_offset()] as isize
                 } else {
                     -1
@@ -81,7 +84,10 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             let va = VirtAddr::from(id);
             if let Some(pte) = page_table.translate(va.floor()) {
                 let flags = pte.flags();
-                if flags.contains(PTEFlags::U) && flags.contains(PTEFlags::W) {
+                if flags.contains(PTEFlags::V)
+                    && flags.contains(PTEFlags::U)
+                    && flags.contains(PTEFlags::W)
+                {
                     pte.ppn().get_bytes_array()[va.page_offset()] = data as u8;
                     0
                 } else {
