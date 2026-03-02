@@ -129,8 +129,9 @@ impl TaskManager {
     /// Add current syscall times
     fn add_current_syscall_times(&self, syscall_id: usize) {
         let mut inner = self.inner.exclusive_access();
-        if syscall_id < inner.tasks[inner.current_task].syscall_times.len() {
-            inner.tasks[inner.current_task].syscall_times[syscall_id] += 1;
+        let current = inner.current_task;
+        if syscall_id < inner.tasks[current].syscall_times.len() {
+            inner.tasks[current].syscall_times[syscall_id] += 1;
         }
     }
 
