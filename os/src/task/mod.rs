@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::PAGE_SIZE;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::{MapPermission, VirtAddr};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -189,15 +189,11 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let cur = inner.current_task;
         let memory_set = &mut inner.tasks[cur].memory_set;
-        let mut va = start;
-        while va < end {
-            if memory_set.translate(VirtAddr::from(va).floor()).is_some() {
-                return -1;
-            }
-            va += PAGE_SIZE;
+        if memory_set.insert_framed_area_if_vacant(start.into(), end.into(), map_perm) {
+            0
+        } else {
+            -1
         }
-        memory_set.insert_framed_area(start.into(), end.into(), map_perm);
-        0
     }
 
     /// Switch current `Running` task to the task we have found,

@@ -63,6 +63,20 @@ impl MemorySet {
             None,
         );
     }
+    pub fn insert_framed_area_if_vacant(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> bool {
+        let map_area = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        if self.areas.iter().any(|area| area.is_overlap(&map_area)) {
+            false
+        } else {
+            self.push(map_area, None);
+            true
+        }
+    }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -286,6 +300,13 @@ impl MapArea {
             map_type,
             map_perm,
         }
+    }
+    pub fn is_overlap(&self, other: &MapArea) -> bool {
+        let start = self.vpn_range.get_start();
+        let end = self.vpn_range.get_end();
+        let other_start = other.vpn_range.get_start();
+        let other_end = other.vpn_range.get_end();
+        start < other_end && other_start < end
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
