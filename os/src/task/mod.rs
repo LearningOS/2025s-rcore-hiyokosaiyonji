@@ -14,7 +14,9 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::PAGE_SIZE;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -152,6 +154,52 @@ impl TaskManager {
         inner.tasks[cur].change_program_brk(size)
     }
 
+    /// Mmap current 'Running' task
+    pub fn mmap_current(&self, start: usize, len: usize, prot: usize) -> isize {
+        if start % PAGE_SIZE != 0 || prot & !0x7 != 0 || prot & 0x7 == 0 {
+            return -1;
+        }
+        if len == 0 {
+            return 0;
+        }
+        let len = if let Some(len) = len.checked_add(PAGE_SIZE - 1) {
+            len / PAGE_SIZE * PAGE_SIZE
+        } else {
+            return -1;
+        };
+        let end = if let Some(end) = start.checked_add(len) {
+            end
+        } else {
+            return -1;
+        };
+        let mut map_perm = MapPermission::U;
+        if prot & 0x1 != 0 {
+            map_perm |= MapPermission::R;
+        }
+        if prot & 0x2 != 0 {
+            map_perm |= MapPermission::W;
+        }
+        if prot & 0x4 != 0 {
+            map_perm |= MapPermission::X;
+        }
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        let memory_set = &mut inner.tasks[cur].memory_set;
+        let mut va = start;
+        while va < end {
+            if memory_set.translate(VirtAddr::from(va).floor()).is_some() {
+                return -1;
+            }
+            va = if let Some(next) = va.checked_add(PAGE_SIZE) {
+                next
+            } else {
+                return -1;
+            };
+        }
+        memory_set.insert_framed_area(start.into(), end.into(), map_perm);
+        0
+    }
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -230,4 +278,9 @@ pub fn get_current_syscall_times(syscall_id: usize) -> isize {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Mmap current 'Running' task
+pub fn mmap_current(start: usize, len: usize, prot: usize) -> isize {
+    TASK_MANAGER.mmap_current(start, len, prot)
 }
