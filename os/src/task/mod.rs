@@ -156,7 +156,11 @@ impl TaskManager {
 
     /// Mmap current 'Running' task
     pub fn mmap_current(&self, start: usize, len: usize, prot: usize) -> isize {
-        if start % PAGE_SIZE != 0 || prot & !0x7 != 0 || prot & 0x7 == 0 {
+        const PROT_READ: usize = 0x1;
+        const PROT_WRITE: usize = 0x2;
+        const PROT_EXEC: usize = 0x4;
+        const PROT_MASK: usize = PROT_READ | PROT_WRITE | PROT_EXEC;
+        if start % PAGE_SIZE != 0 || prot & !PROT_MASK != 0 || prot & PROT_MASK == 0 {
             return -1;
         }
         if len == 0 {
@@ -173,13 +177,13 @@ impl TaskManager {
             return -1;
         };
         let mut map_perm = MapPermission::U;
-        if prot & 0x1 != 0 {
+        if prot & PROT_READ != 0 {
             map_perm |= MapPermission::R;
         }
-        if prot & 0x2 != 0 {
+        if prot & PROT_WRITE != 0 {
             map_perm |= MapPermission::W;
         }
-        if prot & 0x4 != 0 {
+        if prot & PROT_EXEC != 0 {
             map_perm |= MapPermission::X;
         }
         let mut inner = self.inner.exclusive_access();
@@ -190,11 +194,7 @@ impl TaskManager {
             if memory_set.translate(VirtAddr::from(va).floor()).is_some() {
                 return -1;
             }
-            va = if let Some(next) = va.checked_add(PAGE_SIZE) {
-                next
-            } else {
-                return -1;
-            };
+            va += PAGE_SIZE;
         }
         memory_set.insert_framed_area(start.into(), end.into(), map_perm);
         0
