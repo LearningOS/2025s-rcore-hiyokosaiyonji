@@ -196,6 +196,34 @@ impl TaskManager {
         }
     }
 
+    /// Munmap current 'Running' task
+    pub fn munmap_current(&self, start: usize, len: usize) -> isize {
+        if start % PAGE_SIZE != 0 {
+            return -1;
+        }
+        if len == 0 {
+            return 0;
+        }
+        let len = if let Some(len) = len.checked_add(PAGE_SIZE - 1) {
+            len / PAGE_SIZE * PAGE_SIZE
+        } else {
+            return -1;
+        };
+        let end = if let Some(end) = start.checked_add(len) {
+            end
+        } else {
+            return -1;
+        };
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        let memory_set = &mut inner.tasks[cur].memory_set;
+        if memory_set.remove_framed_area_if_mapped(start.into(), end.into()) {
+            0
+        } else {
+            -1
+        }
+    }
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -279,4 +307,9 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
 /// Mmap current 'Running' task
 pub fn mmap_current(start: usize, len: usize, prot: usize) -> isize {
     TASK_MANAGER.mmap_current(start, len, prot)
+}
+
+/// Munmap current 'Running' task
+pub fn munmap_current(start: usize, len: usize) -> isize {
+    TASK_MANAGER.munmap_current(start, len)
 }

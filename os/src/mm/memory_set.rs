@@ -77,6 +77,72 @@ impl MemorySet {
             true
         }
     }
+    pub fn remove_framed_area_if_mapped(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let target = MapArea::new(start_va, end_va, MapType::Framed, MapPermission::empty());
+        for vpn in target.vpn_range {
+            if !self.areas.iter().any(|area| area.contains_vpn(vpn)) {
+                return false;
+            }
+        }
+        let mut i = 0;
+        while i < self.areas.len() {
+            if !self.areas[i].is_overlap(&target) {
+                i += 1;
+                continue;
+            }
+            let mut area = self.areas.remove(i);
+            let area_start = area.vpn_range.get_start();
+            let area_end = area.vpn_range.get_end();
+            let overlap_start = area_start.max(target.vpn_range.get_start());
+            let overlap_end = area_end.min(target.vpn_range.get_end());
+            let mut left_area = None;
+            if area_start < overlap_start {
+                left_area = Some(MapArea::new(
+                    area_start.into(),
+                    overlap_start.into(),
+                    area.map_type,
+                    area.map_perm,
+                ));
+            }
+            let mut right_area = None;
+            if overlap_end < area_end {
+                right_area = Some(MapArea::new(
+                    overlap_end.into(),
+                    area_end.into(),
+                    area.map_type,
+                    area.map_perm,
+                ));
+            }
+            if area.map_type == MapType::Framed {
+                if let Some(left_area) = left_area.as_mut() {
+                    for vpn in left_area.vpn_range {
+                        if let Some(frame) = area.data_frames.remove(&vpn) {
+                            left_area.data_frames.insert(vpn, frame);
+                        }
+                    }
+                }
+                if let Some(right_area) = right_area.as_mut() {
+                    for vpn in right_area.vpn_range {
+                        if let Some(frame) = area.data_frames.remove(&vpn) {
+                            right_area.data_frames.insert(vpn, frame);
+                        }
+                    }
+                }
+            }
+            for vpn in VPNRange::new(overlap_start, overlap_end) {
+                area.unmap_one(&mut self.page_table, vpn);
+            }
+            if let Some(left_area) = left_area {
+                self.areas.insert(i, left_area);
+                i += 1;
+            }
+            if let Some(right_area) = right_area {
+                self.areas.insert(i, right_area);
+                i += 1;
+            }
+        }
+        true
+    }
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -307,6 +373,9 @@ impl MapArea {
         let other_start = other.vpn_range.get_start();
         let other_end = other.vpn_range.get_end();
         start < other_end && other_start < end
+    }
+    pub fn contains_vpn(&self, vpn: VirtPageNum) -> bool {
+        self.vpn_range.get_start() <= vpn && vpn < self.vpn_range.get_end()
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;

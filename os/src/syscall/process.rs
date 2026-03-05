@@ -3,7 +3,7 @@ use crate::mm::{translated_byte_buffer, PTEFlags, PageTable, VirtAddr};
 use crate::task::current_user_token;
 use crate::task::{
     change_program_brk, exit_current_and_run_next, get_current_syscall_times, mmap_current,
-    suspend_current_and_run_next,
+    munmap_current, suspend_current_and_run_next,
 };
 use crate::timer::get_time_us;
 
@@ -109,9 +109,9 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+    munmap_current(start, len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
