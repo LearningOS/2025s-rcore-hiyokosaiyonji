@@ -19,6 +19,11 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+const MMAP_PORT_R: usize = 0x1;
+const MMAP_PORT_W: usize = 0x2;
+const MMAP_PORT_X: usize = 0x4;
+const MMAP_PORT_MASK: usize = MMAP_PORT_R | MMAP_PORT_W | MMAP_PORT_X;
+
 /// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
@@ -142,7 +147,11 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!("kernel:pid[{}] sys_mmap", current_task().unwrap().pid.0);
     let start_va = VirtAddr::from(start);
-    if !start_va.aligned() || len == 0 || (port & !0x7) != 0 || (port & 0x7) == 0 {
+    if !start_va.aligned()
+        || len == 0
+        || (port & !MMAP_PORT_MASK) != 0
+        || (port & MMAP_PORT_MASK) == 0
+    {
         return -1;
     }
     let end = if let Some(end) = start.checked_add(len) {
@@ -160,13 +169,13 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
         }
     }
     let mut map_perm = MapPermission::U;
-    if port & 0x1 != 0 {
+    if port & MMAP_PORT_R != 0 {
         map_perm |= MapPermission::R;
     }
-    if port & 0x2 != 0 {
+    if port & MMAP_PORT_W != 0 {
         map_perm |= MapPermission::W;
     }
-    if port & 0x4 != 0 {
+    if port & MMAP_PORT_X != 0 {
         map_perm |= MapPermission::X;
     }
     inner
