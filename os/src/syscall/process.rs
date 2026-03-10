@@ -1,13 +1,15 @@
 //! Process management syscalls
 use alloc::sync::Arc;
+use core::{mem::size_of, slice::from_raw_parts};
 
 use crate::{
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
+    timer::get_time_us,
 };
 
 #[repr(C)]
@@ -67,7 +69,11 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task().unwrap().pid.0, pid);
+    trace!(
+        "kernel::pid[{}] sys_waitpid [{}]",
+        current_task().unwrap().pid.0,
+        pid
+    );
     let task = current_task().unwrap();
     // find a child process
 
@@ -105,30 +111,97 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
+    trace!("kernel:pid[{}] sys_get_time", current_task().unwrap().pid.0);
+    if ts.is_null() {
+        return -1;
+    }
+    let us = get_time_us();
+    let timeval = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let token = current_user_token();
+    let mut buffers = translated_byte_buffer(token, ts as *const u8, size_of::<TimeVal>());
+    let src = unsafe {
+        from_raw_parts(
+            (&timeval as *const TimeVal) as *const u8,
+            size_of::<TimeVal>(),
+        )
+    };
+    let mut copied = 0usize;
+    for dst in buffers.iter_mut() {
+        let len = dst.len();
+        dst.copy_from_slice(&src[copied..copied + len]);
+        copied += len;
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel:pid[{}] sys_mmap", current_task().unwrap().pid.0);
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() || len == 0 || (port & !0x7) != 0 || (port & 0x7) == 0 {
+        return -1;
+    }
+    let end = if let Some(end) = start.checked_add(len) {
+        end
+    } else {
+        return -1;
+    };
+    let start_vpn = start_va.floor().0;
+    let end_vpn = VirtAddr::from(end).ceil().0;
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    for vpn in start_vpn..end_vpn {
+        if inner.memory_set.translate(vpn.into()).is_some() {
+            return -1;
+        }
+    }
+    let mut map_perm = MapPermission::U;
+    if port & 0x1 != 0 {
+        map_perm |= MapPermission::R;
+    }
+    if port & 0x2 != 0 {
+        map_perm |= MapPermission::W;
+    }
+    if port & 0x4 != 0 {
+        map_perm |= MapPermission::X;
+    }
+    inner
+        .memory_set
+        .insert_framed_area(start_va, VirtAddr::from(end), map_perm);
+    0
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel:pid[{}] sys_munmap", current_task().unwrap().pid.0);
+    let start_va = VirtAddr::from(start);
+    if !start_va.aligned() || len == 0 {
+        return -1;
+    }
+    let end = if let Some(end) = start.checked_add(len) {
+        end
+    } else {
+        return -1;
+    };
+    let start_vpn = start_va.floor();
+    let end_vpn = VirtAddr::from(end).ceil().0;
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    for vpn in start_vpn.0..end_vpn {
+        if inner.memory_set.translate(vpn.into()).is_none() {
+            return -1;
+        }
+    }
+    inner.memory_set.remove_area_with_start_vpn(start_vpn);
+    if inner.memory_set.translate(start_vpn).is_some() {
+        -1
+    } else {
+        0
+    }
 }
 
 /// change data segment size
