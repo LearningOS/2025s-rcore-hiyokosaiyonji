@@ -9,6 +9,9 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+pub const DEFAULT_PRIORITY: isize = 16;
+pub const INITIAL_STRIDE: isize = 0;
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -124,8 +127,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
-                    priority: 16,
-                    stride: 0,
+                    priority: DEFAULT_PRIORITY,
+                    stride: INITIAL_STRIDE,
                 })
             },
         };
@@ -199,8 +202,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
-                    priority: 16,
-                    stride: 0,
+                    priority: DEFAULT_PRIORITY,
+                    stride: INITIAL_STRIDE,
                 })
             },
         });
